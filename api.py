@@ -3,6 +3,8 @@
 Created on Thu May 21 10:28:18 2020
 
 @author: harry
+
+version: 0.0.1
 """
 
 import sys
