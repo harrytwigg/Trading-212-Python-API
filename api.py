@@ -7,30 +7,29 @@ Created on Thu May 21 10:28:18 2020
 version: 0.0.1
 """
 
-import sys
+
 import threading
+from pyvirtualdisplay import Display
 from datetime import datetime
-from decimal import Decimal
-from random import randrange
 from re import sub
 from time import sleep
-import os
 
 import pandas as pd
-import requests
 from bs4 import BeautifulSoup
 from splinter import Browser
-from selenium.webdriver.common.keys import Keys
 
 from colour import *
 
 
 class API():
-    def __init__(self, apiMode, email, password, updateIntervalRequested=1, isHeadless=False):
+    # Sleep tags are sometimes used as otherwise trade execution appears to be disabled for some reason
+    
+    def __init__(self, apiMode, email, password, updateIntervalRequested=1, isHeadless=False, logging=False):
         # The self keyword references an instance of the class
 
         self.running = True
-
+        self.logging = logging
+        
         apiModeURL = {
             "cfd": "",
             "invest": "https://www.trading212.com/en/login",
@@ -38,16 +37,18 @@ class API():
         }
 
         if apiMode == "cfd":
-            error("CFD mode not currently supported, aborting")
+            if self.logging : error("CFD mode not currently supported, aborting")
             self.quit()
         elif apiMode == "invest":
-            output("Connecting to Trading 212 " + apiMode)
+            if self.logging : output("Connecting to Trading 212 " + apiMode)
         elif apiMode == "isa":
-            output("Connecting to Trading 212 " + apiMode)
+            if self.logging : output("Connecting to Trading 212 " + apiMode)
         else:
-            error("Invalid API mode, '" + apiMode + "' aborting")
+            if self.logging : error("Invalid API mode, '" + apiMode + "' aborting")
             self.quit()
-
+        
+        
+        
         self.browser = Browser("firefox", headless=isHeadless)
         self.browser.visit(apiModeURL.get(apiMode))
         self.browser.find_by_id("username-real").fill(email)
@@ -77,16 +78,16 @@ class API():
 
         # Background update thread
         if updateIntervalRequested == 0:
-            output("Parameter updating disabled, manual requests must be used")
+            if self.logging : output("Parameter updating disabled, manual requests must be used")
         else:
             self.updateInterval = updateIntervalRequested
             self.updateThread = threading.Thread(target=self.update, args=())
             self.updateThread.daemon = True
             self.updateThread.start()
-            output("Update interval of " +
-                   self.updateInterval + " seconds initialised")
+            if self.logging : output("Update interval of " +
+                   str(self.updateInterval) + " seconds initialised")
 
-        output("Login successful")
+        if self.logging : output("Login successful")
 
     def getLiveResult(self):
         self.liveResult = float(sub(r'[^\d.]', '', self.browser.find_by_css(
@@ -166,7 +167,7 @@ class API():
 
     def getBottomState(self, desiredState=0):
         # Checks to see if the first second or third tab or none (0) is open along the bottom
-        # Then goes to desired state
+        # Then goes to desired state, aka the number of the tab along the botom requested
 
         self.bottomCurrentState = 0
 
@@ -201,31 +202,63 @@ class API():
                     self.browser.find_by_css(
                         'span[class="tab-item tabalarms has-tooltip svg-icon-holder"]').first.click()
         except:
-            error("Failed to change bottom state from " +
+            if self.logging : error("Failed to change bottom state from " +
                   self.bottomCurrentState + " to " + desiredState)
-
-    def buy(self, desiredInstrument="", poundValue=0.0, numberOfShares=0.0):
-        self.canBuy = True
+            
+    def getPrice(self, desiredInstrument=""):
+        # Get the unit price of an instrument in £
+        
         if desiredInstrument == "":
-            error("No instrument requested to buy")
+            if self.logging : error("No instrument requested to get price of")
+            return None
+        #sleep(0.1)
+        self.browser.find_by_id("navigation-search-button").first.click()
+        self.browser.find_by_css('input[class="search-input"]').fill(desiredInstrument)
+        #sleep(0.5)
+        self.browser.find_by_css('div[class="ticker"]').first.click()
+        #sleep(0.1)
+        self.browser.find_by_css('div[class="buy-button"]').last.click()
+        #sleep(0.1)
+        self.browser.find_by_css('input[tabindex="-1"]').fill(str(100))
+        #sleep(0.1)
+        self.unitCost = self.browser.find_by_css('div[class="order-costs deposit-required"]').first.value
+        self.unitCost = self.unitCost.replace("~£", "")
+        self.unitCost = self.unitCost.replace(" ", "")
+        self.unitCost = float(self.unitCost) / 100
+        if self.logging : output("The unit cost of " + desiredInstrument + " is £" + str(self.unitCost) + " currently")
+        self.browser.find_by_css('div[data-dojo-attach-event="click: close"]').last.click()
+        #sleep(0.1)
+        self.browser.find_by_css('div[class="close-icon svg-icon-holder"]').first.click()
+        #sleep(0.1)
+        self.browser.find_by_css('div[class="back-button svg-icon-holder"]').first.click()
+        #sleep(0.1)
+        return self.unitCost
+    
+    def buy(self, desiredInstrument="", poundValue=0.0, numberOfShares=0.0):
+        # If have already placed a lot of trades ina day, further execution can be temporarily disabled
+        
+        self.canBuy = True
+        self.isPurchased = False
+        if desiredInstrument == "":
+            if self.logging : error("No instrument requested to buy")
             self.canBuy = False
         if poundValue == 0.0 and numberOfShares == 0.0:
-            error("No £ value and no number of shares requested")
+            if self.logging : error("No £ value and no number of shares requested")
             self.canBuy = False
         if not(poundValue == 0.0) and not(numberOfShares == 0.0):
-            error("£ value and number of shares cannot both be specified")
+            if self.logging : error("£ value and number of shares cannot both be specified")
             self.canBuy = False
         if self.canBuy:
+            #sleep(0.1)
             self.browser.find_by_id("navigation-search-button").first.click()
-            sleep(0.1)
             self.browser.find_by_css(
                 'input[class="search-input"]').fill(desiredInstrument)
-            sleep(0.5)
+            sleep(0.4)
             self.browser.find_by_css(
                 'div[class="ticker"]').first.click()
-            sleep(0.2)
+            sleep(0.1)
             self.browser.find_by_css('div[class="buy-button"]').last.click()
-            sleep(0.2)
+            sleep(0.1)
 
             if poundValue == 0.0:
                 self.browser.find_by_css(
@@ -233,8 +266,8 @@ class API():
                 sleep(0.1)
                 self.browser.find_by_css(
                     'div[class="custom-button review-order-button"]').first.click()
+                sleep(0.2)
                 try:
-                    sleep(0.2)
                     self.browser.find_by_css(
                         'div[class="custom-button review-order-button"]').first.click()
                 except:
@@ -248,14 +281,41 @@ class API():
                 sleep(0.1)
                 self.browser.find_by_css(
                     'div[class="back-button svg-icon-holder"]').first.click()
-                output("Order to buy " + str(numberOfShares) + " of " + desiredInstrument +
+                if self.logging : output("Order to buy " + str(numberOfShares) + " of " + desiredInstrument +
                        " successfully sent Trading 212, wait for confirmation of execution")
+                sleep(0.1)
                 return 1
             if numberOfShares == 0.0:
-                error("Order execution by £ value not currently supported, exiting")
+                if self.logging : error("Order execution by £ value not currently supported, exiting")
         else:
             return None
-
+    
+    def makeDeposit(self, amount=1):
+        # Make a deposit using a debit card
+        # Uses the first saved card on the account
+        # Whole numbers only, else rounded
+        
+        self.browser.find_by_css('div[class="nav-button real_item deposit-funds-button"]').first.click()
+        sleep(5)
+        self.browser.find_by_css('input[class="p21m3n7s-input"]').fill(str(round(amount)))
+        self.browser.find_by_css('div[class="p21m3n7s-checkbox-icon-wrapper"]').first.click()
+        self.browser.find_by_css('div[class="p21m3n7s-label"]').first.click()
+        sleep(0.1)
+        self.browser.find_by_css('div[class="p21m3n7s-saved-card-item"]').first.click()
+        sleep(2)
+        self.browser.find_by_css('div[class="p21m3n7s-button p21m3n7s-accent-button"]').first.click()
+        sleep(7.5)
+        self.browser.find_by_css('div[class="p21m3n7s-label"]').first.click()
+        
+        if self.logging : output("Deposit successfully made to the account of £" + str(round(amount)))
+    
+    def getWatchlists(self):
+        # Returns a list of the current watchlists and their positions
+        self.watchlists = []
+        for watchlist in self.browser.find_by_css('div[class="short-title"]'):
+            self.watchlists.append(watchlist.text)
+        print(self.watchlists)
+        
     def update(self):
         # The background update thread
         while self.running:
@@ -269,6 +329,16 @@ class API():
 
     def quit(self):
         self.running = False
-        self.quit()
-        output("Browser quit successfully")
-        sys.exit()
+        self.browser.quit()
+        if self.logging : output("Browser quit successfully, remember to delete the variable instance")
+
+api = API("isa", "harrytwigg111@gmail.com", "Chicken101", isHeadless=False, logging=True, updateIntervalRequested=0)
+
+api.getWatchlists()
+#api.makeDeposit(2.5)
+#api.getPrice("GILI")
+#api.getPrice("TSLA")
+#api.buy(desiredInstrument="GILI", numberOfShares=0.002)
+#api.buy(desiredInstrument="TSLA", numberOfShares=0.001)
+#for time in range(0, 2):
+#    api.buy(desiredInstrument="LK", numberOfShares=0.01)
