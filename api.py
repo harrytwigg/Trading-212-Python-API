@@ -331,14 +331,3 @@ class API():
         self.running = False
         self.browser.quit()
         if self.logging : output("Browser quit successfully, remember to delete the variable instance")
-
-api = API("isa", "harrytwigg111@gmail.com", "Chicken101", isHeadless=False, logging=True, updateIntervalRequested=0)
-
-api.getWatchlists()
-#api.makeDeposit(2.5)
-#api.getPrice("GILI")
-#api.getPrice("TSLA")
-#api.buy(desiredInstrument="GILI", numberOfShares=0.002)
-#api.buy(desiredInstrument="TSLA", numberOfShares=0.001)
-#for time in range(0, 2):
-#    api.buy(desiredInstrument="LK", numberOfShares=0.01)
